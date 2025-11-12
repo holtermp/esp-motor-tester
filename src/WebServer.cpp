@@ -5,6 +5,7 @@
 #include <ESP8266WiFi.h>
 #endif
 #include "RPMCounter.h"
+#include "MotorController.h"
 
 AsyncWebServer WebServer::server(80);
 bool WebServer::isStarted = false;
@@ -25,9 +26,82 @@ void WebServer::handle() {
 }
 
 void WebServer::setupRoutes() {
-  // Serve the home page
+  // Serve a minimal home page that loads content via AJAX
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send(200, "text/html", generateHomePage());
+    const char* html = R"(<!DOCTYPE html>
+<html><head><title>ESP Motor Tester</title>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<style>
+body{font-family:Arial;margin:0;padding:20px;background:#f0f0f0}
+.container{max-width:800px;margin:0 auto;background:white;padding:20px;border-radius:10px}
+h1{color:#333;text-align:center}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin:20px 0}
+.box{background:#f8f9fa;padding:15px;border-radius:5px}
+.status{text-align:center;background:#d4edda;color:#155724;padding:10px;border-radius:5px;margin:20px 0}
+.control{text-align:center;margin:20px 0;padding:15px;background:#e7f3ff;border-radius:5px}
+.motor{text-align:center;margin:20px 0;padding:15px;background:#f8f9fa;border-radius:5px;border:2px solid #28a745}
+.buttons{display:flex;justify-content:center;gap:10px;margin:15px 0;flex-wrap:wrap}
+.btn{padding:8px 12px;background:#fff;border:2px solid #28a745;border-radius:5px;cursor:pointer}
+.btn.active{background:#28a745;color:white}
+.rpm{font-size:1.5em;font-weight:bold;color:#007bff}
+</style></head><body>
+<div class='container'>
+<h1>ESP Motor Tester</h1>
+<div class='status'>System Status: <span id='status'>Loading...</span></div>
+<div class='control'>
+<label><input type='checkbox' id='live' onclick='toggleLive()'> Live Updates (2s)</label>
+<div>RPM: <span id='rpm' class='rpm'>--</span></div>
+</div>
+<div class='motor'>
+<h3>Motor Control</h3>
+<div>Speed: <span id='speed'>0</span>%</div>
+<div class='buttons'>
+<button class='btn' onclick='setSpeed(0)'>OFF</button>
+<button class='btn' onclick='setSpeed(25)'>25%</button>
+<button class='btn' onclick='setSpeed(50)'>50%</button>
+<button class='btn' onclick='setSpeed(75)'>75%</button>
+<button class='btn' onclick='setSpeed(100)'>100%</button>
+</div></div>
+<div class='grid'>
+<div class='box'><h3>Device</h3><div id='device'>Loading...</div></div>
+<div class='box'><h3>RPM Sensor</h3><div id='sensor'>Loading...</div></div>
+<div class='box'><h3>Motor</h3><div id='motor'>Loading...</div></div>
+<div class='box'><h3>Network</h3><div id='network'>Loading...</div></div>
+</div></div>
+<script>
+let interval=null;
+function toggleLive(){
+let cb=document.getElementById('live');
+if(cb.checked){interval=setInterval(update,2000);update();}
+else{clearInterval(interval);interval=null;}
+}
+function update(){
+fetch('/api/status').then(r=>r.json()).then(d=>{
+document.getElementById('status').textContent='Online';
+document.getElementById('rpm').textContent=d.rpm.current+' RPM';
+document.getElementById('speed').textContent=d.motor.speed;
+document.getElementById('device').innerHTML='Free Heap: '+d.freeHeap+'<br>IP: '+d.ip;
+document.getElementById('sensor').innerHTML='Pin: D4<br>RPM: '+d.rpm.current+'<br>Signals: '+d.rpm.signalCount;
+document.getElementById('motor').innerHTML='Speed: '+d.motor.speed+'%<br>Running: '+(d.motor.running?'Yes':'No')+'<br>PWM: 0-255';
+document.getElementById('network').innerHTML='SSID: '+d.ssid+'<br>Signal: '+d.rssi+' dBm';
+updateBtns(d.motor.speed);
+}).catch(e=>{document.getElementById('status').textContent='Error';});}
+function setSpeed(s){
+let fd=new FormData();fd.append('speed',s);
+fetch('/api/motor/speed',{method:'POST',body:fd})
+.then(r=>r.json()).then(d=>{
+if(d.success){document.getElementById('speed').textContent=s;updateBtns(s);}
+}).catch(e=>console.log(e));}
+function updateBtns(speed){
+document.querySelectorAll('.btn').forEach(b=>b.classList.remove('active'));
+let btns=document.querySelectorAll('.btn');
+let speeds=[0,25,50,75,100];
+let idx=speeds.indexOf(speed);
+if(idx>=0)btns[idx].classList.add('active');
+}
+update();
+</script></body></html>)";
+    request->send(200, "text/html", html);
   });
   
   // API endpoint for RPM data
@@ -47,135 +121,74 @@ void WebServer::setupRoutes() {
     request->send(response);
   });
   
+  // API endpoint for motor control - GET current status
+  server.on("/api/motor", HTTP_GET, [](AsyncWebServerRequest *request){
+    String json = "{";
+    json += "\"speed\":" + String(MotorController::getCurrentSpeed()) + ",";
+    json += "\"running\":" + String(MotorController::isRunning() ? "true" : "false") + ",";
+    json += "\"lastUpdate\":" + String(MotorController::getLastUpdateTime()) + ",";
+    json += "\"timestamp\":" + String(millis());
+    json += "}";
+    
+    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", json);
+    response->addHeader("Access-Control-Allow-Origin", "*");
+    request->send(response);
+  });
+  
+  // API endpoint for motor control - POST to set speed
+  server.on("/api/motor/speed", HTTP_POST, [](AsyncWebServerRequest *request){
+    String response = "{\"error\":\"No speed parameter provided\"}";
+    int responseCode = 400;
+    
+    if (request->hasParam("speed", true)) {
+      int speed = request->getParam("speed", true)->value().toInt();
+      speed = constrain(speed, 0, 100);
+      MotorController::setSpeed(speed);
+      
+      response = "{";
+      response += "\"success\":true,";
+      response += "\"speed\":" + String(speed) + ",";
+      response += "\"timestamp\":" + String(millis());
+      response += "}";
+      responseCode = 200;
+    }
+    
+    AsyncWebServerResponse *resp = request->beginResponse(responseCode, "application/json", response);
+    resp->addHeader("Access-Control-Allow-Origin", "*");
+    request->send(resp);
+  });
+  
+  // Combined API endpoint for all data
+  server.on("/api/status", HTTP_GET, [](AsyncWebServerRequest *request){
+    String json = "{";
+    json += "\"rpm\":{";
+    json += "\"current\":" + String(RPMCounter::getCurrentRPM(), 1) + ",";
+    json += "\"signalCount\":" + String(RPMCounter::getSignalCount()) + ",";
+    json += "\"lastSignalTime\":" + String(RPMCounter::getLastSignalTime()) + ",";
+    json += "\"timeBetweenSignalsMicros\":" + String(RPMCounter::getTimeBetweenSignals()) + ",";
+    json += "\"timeBetweenSignalsMs\":" + String(RPMCounter::getTimeBetweenSignals() / 1000.0, 3);
+    json += "},";
+    json += "\"motor\":{";
+    json += "\"speed\":" + String(MotorController::getCurrentSpeed()) + ",";
+    json += "\"running\":" + String(MotorController::isRunning() ? "true" : "false") + ",";
+    json += "\"lastUpdate\":" + String(MotorController::getLastUpdateTime());
+    json += "},";
+    json += "\"freeHeap\":" + String(ESP.getFreeHeap()) + ",";
+    json += "\"ip\":\"" + WiFi.localIP().toString() + "\",";
+    json += "\"ssid\":\"" + WiFi.SSID() + "\",";
+    json += "\"rssi\":" + String(WiFi.RSSI()) + ",";
+    json += "\"timestamp\":" + String(millis());
+    json += "}";
+    
+    AsyncWebServerResponse *response = request->beginResponse(200, "application/json", json);
+    response->addHeader("Access-Control-Allow-Origin", "*");
+    request->send(response);
+  });
+  
   // Handle not found
   server.onNotFound([](AsyncWebServerRequest *request){
     handleNotFound(request);
   });
-}
-
-String WebServer::generateHomePage() {
-  String html = "<!DOCTYPE html>";
-  html += "<html><head>";
-  html += "<title>ESP RacePi Motor Tester</title>";
-  html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
-  html += "<style>";
-  html += "body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f0f0f0; }";
-  html += ".container { max-width: 800px; margin: 0 auto; background-color: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }";
-  html += "h1 { color: #333; text-align: center; }";
-  html += ".info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0; }";
-  html += ".info-box { background-color: #f8f9fa; padding: 15px; border-radius: 5px; }";
-  html += ".info-box h3 { margin-top: 0; color: #495057; }";
-  html += ".status { text-align: center; background-color: #d4edda; color: #155724; padding: 10px; border-radius: 5px; margin: 20px 0; }";
-  html += ".coming-soon { text-align: center; background-color: #fff3cd; color: #856404; padding: 15px; border-radius: 5px; margin: 20px 0; }";
-  html += ".live-control { text-align: center; margin: 20px 0; padding: 15px; background-color: #e7f3ff; border-radius: 5px; }";
-  html += ".rpm-value { font-size: 1.5em; font-weight: bold; color: #007bff; }";
-  html += ".updating { animation: pulse 1s infinite; }";
-  html += "@keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }";
-  html += "</style>";
-  html += "</head><body>";
-  
-  html += "<div class='container'>";
-  html += "<h1>ESP RacePi Motor Tester</h1>";
-  
-  html += "<div class='status'>";
-  html += "<strong>System Status:</strong> Online and Ready";
-  html += "</div>";
-  
-  html += "<div class='live-control'>";
-  html += "<label><input type='checkbox' id='liveUpdate' onchange='toggleLiveUpdate()'> Enable Live RPM Updates (every 5 seconds)</label>";
-  html += "<div style='margin-top: 10px;'>";
-  html += "<span>Live RPM: </span><span id='liveRPM' class='rpm-value'>--</span>";
-  html += "</div>";
-  html += "</div>";
-  
-  html += "<div class='info-grid'>";
-  
-  html += "<div class='info-box'>";
-  html += "<h3>Device Information</h3>";
-  html += "<p><strong>Hostname:</strong> esp-racepi-motor-tester.local</p>";
-  html += "<p><strong>IP Address:</strong> " + WiFi.localIP().toString() + "</p>";
-  html += "<p><strong>MAC Address:</strong> " + WiFi.macAddress() + "</p>";
-  html += "<p><strong>Free Heap:</strong> " + String(ESP.getFreeHeap()) + " bytes</p>";
-  html += "</div>";
-  
-  html += "<div class='info-box'>";
-  html += "<h3>RPM Sensor Status</h3>";
-  html += "<p><strong>Sensor Pin:</strong> D4</p>";
-  html += "<p><strong>Signal Count:</strong> <span id='signalCount'>" + String(RPMCounter::getSignalCount()) + "</span></p>";
-  html += "<p><strong>Current RPM:</strong> <span id='currentRPM'>" + String(RPMCounter::getCurrentRPM(), 1) + "</span></p>";
-  html += "<p><strong>Last Signal:</strong> <span id='lastSignalTime'>" + String(RPMCounter::getLastSignalTime()) + "</span> ms</p>";
-  html += "<p><strong>Signal Interval:</strong> <span id='timeBetweenSignalsMicros'>" + String(RPMCounter::getTimeBetweenSignals()) + "</span> μs (<span id='timeBetweenSignalsMs'>" + String(RPMCounter::getTimeBetweenSignals() / 1000.0, 3) + "</span> ms)</p>";
-  html += "<p><strong>Status:</strong> " + String(RPMCounter::hasPendingSignal() ? "Signal Pending" : "Ready") + "</p>";
-  html += "<p><strong>Debounce:</strong> 0.5ms (for high-speed motors)</p>";
-  html += "</div>";
-  
-  html += "<div class='info-box'>";
-  html += "<h3>Network Information</h3>";
-  html += "<p><strong>SSID:</strong> " + WiFi.SSID() + "</p>";
-  html += "<p><strong>Signal Strength:</strong> " + String(WiFi.RSSI()) + " dBm</p>";
-  html += "<p><strong>Gateway:</strong> " + WiFi.gatewayIP().toString() + "</p>";
-  html += "<p><strong>Subnet:</strong> " + WiFi.subnetMask().toString() + "</p>";
-  html += "</div>";
-  
-  html += "</div>";
-  
-  html += "<div class='coming-soon'>";
-  html += "<h3>High-Speed RPM Measurement Active!</h3>";
-  html += "<p>The device is now measuring RPM signals on pin D4 with 0.5ms debouncing.</p>";
-  html += "<p>Capable of measuring motors up to 21,000 RPM accurately.</p>";
-  html += "<p>Connect your RPM sensor to pin D4 and monitor the serial output for signal detection.</p>";
-  html += "<p>Future features will include RPM logging, averaging, and motor control capabilities.</p>";
-  html += "</div>";
-  
-  html += "</div>";
-  
-  // Add JavaScript for live updates
-  html += "<script>";
-  html += "let updateInterval = null;";
-  html += "function toggleLiveUpdate() {";
-  html += "  const checkbox = document.getElementById('liveUpdate');";
-  html += "  if (checkbox.checked) {";
-  html += "    startLiveUpdate();";
-  html += "  } else {";
-  html += "    stopLiveUpdate();";
-  html += "  }";
-  html += "}";
-  html += "function startLiveUpdate() {";
-  html += "  updateRPMData();"; // Update immediately
-  html += "  updateInterval = setInterval(updateRPMData, 5000);"; // Then every 5 seconds
-  html += "}";
-  html += "function stopLiveUpdate() {";
-  html += "  if (updateInterval) {";
-  html += "    clearInterval(updateInterval);";
-  html += "    updateInterval = null;";
-  html += "  }";
-  html += "  document.getElementById('liveRPM').classList.remove('updating');";
-  html += "}";
-  html += "function updateRPMData() {";
-  html += "  const liveRPM = document.getElementById('liveRPM');";
-  html += "  liveRPM.classList.add('updating');";
-  html += "  fetch('/api/rpm')";
-  html += "    .then(response => response.json())";
-  html += "    .then(data => {";
-  html += "      document.getElementById('liveRPM').textContent = data.rpm + ' RPM';";
-  html += "      document.getElementById('signalCount').textContent = data.signalCount;";
-  html += "      document.getElementById('currentRPM').textContent = data.rpm;";
-  html += "      document.getElementById('lastSignalTime').textContent = data.lastSignalTime;";
-  html += "      document.getElementById('timeBetweenSignalsMicros').textContent = data.timeBetweenSignalsMicros;";
-  html += "      document.getElementById('timeBetweenSignalsMs').textContent = data.timeBetweenSignalsMs;";
-  html += "      liveRPM.classList.remove('updating');";
-  html += "    })";
-  html += "    .catch(error => {";
-  html += "      console.error('Error fetching RPM data:', error);";
-  html += "      document.getElementById('liveRPM').textContent = 'Error';";
-  html += "      liveRPM.classList.remove('updating');";
-  html += "    });";
-  html += "}";
-  html += "</script>";
-  
-  html += "</body></html>";
-  
-  return html;
 }
 
 void WebServer::handleNotFound(AsyncWebServerRequest *request) {

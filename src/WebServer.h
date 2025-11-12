@@ -18,7 +18,6 @@ class WebServer {
     static bool isStarted;
     
     static void setupRoutes();
-    static String generateHomePage();
     static void handleNotFound(AsyncWebServerRequest *request);
 };
 

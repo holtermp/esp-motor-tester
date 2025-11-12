@@ -5,6 +5,7 @@
 #include "OTAService.h"
 #include "WebServer.h"
 #include "RPMCounter.h"
+#include "MotorController.h"
 
 // Pin definitions
 #define RPM_SENSOR_PIN D4
@@ -40,8 +41,12 @@ void setup() {
   // Initialize RPM counter
   RPMCounter::begin(RPM_SENSOR_PIN);
   
+  // Initialize motor controller
+  MotorController::begin();
+  
   Serial.println("=== System Ready ===");
   Serial.println("RPM measurement active on pin D4");
+  Serial.println("Motor control active (L298N on D1, D2, D3)");
   Serial.println("Visit http://esp-racepi-motor-tester.local for web interface");
   Serial.println();
 }
