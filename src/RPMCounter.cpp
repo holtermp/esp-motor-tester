@@ -11,6 +11,13 @@ uint8_t RPMCounter::sensorPin = 0;
 volatile unsigned long RPMCounter::currentTimestamp = 0;
 volatile unsigned long RPMCounter::previousTimestamp = 0;
 volatile bool RPMCounter::timestampReady = false;
+volatile unsigned long RPMCounter::accelerationTestStartTime = 0;
+volatile bool RPMCounter::accelerationTestActive = false;
+volatile unsigned long RPMCounter::risingEdgeTime = 0;
+volatile unsigned long RPMCounter::fallingEdgeTime = 0;
+volatile bool RPMCounter::risingEdgeDetected = false;
+volatile unsigned long RPMCounter::lastValidSignalLength = 0;
+volatile unsigned long RPMCounter::consistentSignalCount = 0;
 
 void RPMCounter::begin(uint8_t pin) {
     sensorPin = pin;
@@ -23,38 +30,108 @@ void RPMCounter::begin(uint8_t pin) {
     timestampReady = false;
     currentRPM = 0.0;
     lastIntervalMicros = 0;
+    accelerationTestStartTime = 0;
+    accelerationTestActive = false;
+    risingEdgeTime = 0;
+    fallingEdgeTime = 0;
+    risingEdgeDetected = false;
     
     // Configure pin as input with pull-up resistor
     pinMode(pin, INPUT_PULLUP);
     
-    // Attach interrupt on rising edge (signal goes from LOW to HIGH)
-    attachInterrupt(digitalPinToInterrupt(pin), handleSignal, RISING);
+    // Attach single interrupt to handle both edges
+    attachInterrupt(digitalPinToInterrupt(pin), handleSignalChange, CHANGE);
     
     Serial.print("RPM Counter initialized on pin D");
     Serial.print(pin);
-    Serial.println(" with 1ms debounce and bounds checking (10-25000 RPM)");
+    Serial.println(" with dual-edge signal length filtering (600μs - 1.4ms)");
 }
 
-void IRAM_ATTR RPMCounter::handleSignal() {
+void RPMCounter::reset() {
+    // Reset all volatile variables safely
+    signalPending = false;
+    lastSignalTime = 0;
+    blockingTimestamp = 0;
+    currentTimestamp = 0;
+    previousTimestamp = 0;
+    timestampReady = false;
+    currentRPM = 0.0;
+    lastIntervalMicros = 0;
+    accelerationTestStartTime = 0;
+    accelerationTestActive = false;
+    risingEdgeTime = 0;
+    fallingEdgeTime = 0;
+    risingEdgeDetected = false;
+    lastValidSignalLength = 0;
+    consistentSignalCount = 0;
+    
+    // Note: we don't reset signalCount to preserve total count
+    
+    Serial.println("RPM Counter reset - all values cleared");
+}
+
+void IRAM_ATTR RPMCounter::handleSignalChange() {
     unsigned long now = micros();
+    bool pinState = digitalRead(sensorPin);  // Read current pin state
     
     // Simple debounce: ignore signals that come too quickly
     if (now - blockingTimestamp < DEBOUNCE_TIME_US) {
         return;
     }
     
-    blockingTimestamp = now;
-    
-    // Just capture timestamps - do NO calculations in ISR
-    previousTimestamp = currentTimestamp;
-    currentTimestamp = now;
-    
-    signalCount++;
-    signalPending = true;
-    
-    // Mark that we have two timestamps ready for calculation
-    if (previousTimestamp > 0) {
-        timestampReady = true;
+    if (pinState == HIGH) {
+        // Rising edge detected
+        risingEdgeTime = now;
+        risingEdgeDetected = true;
+    } else {
+        // Falling edge detected
+        fallingEdgeTime = now;
+        
+        // Only process falling edge if we have a valid rising edge
+        if (!risingEdgeDetected) {
+            return;
+        }
+        
+        // Calculate signal length
+        unsigned long signalLength = fallingEdgeTime - risingEdgeTime;
+        
+        // Filter by signal length - reject obvious noise
+        if (signalLength < MIN_SIGNAL_LENGTH_US || signalLength > MAX_SIGNAL_LENGTH_US) {
+            risingEdgeDetected = false;
+            return;
+        }
+        
+        // Additional consistency check: reject signals that vary too much from recent signals
+        // This helps filter out multiple apertures or reflections
+        if (lastValidSignalLength > 0) {
+            unsigned long lengthDiff = (signalLength > lastValidSignalLength) ? 
+                                     (signalLength - lastValidSignalLength) : 
+                                     (lastValidSignalLength - signalLength);
+            
+            // Reject if signal length differs by more than 50% from the last valid signal
+            if (lengthDiff > (lastValidSignalLength / 2)) {
+                risingEdgeDetected = false;
+                return;
+            }
+        }
+        
+        // Valid signal - update tracking
+        lastValidSignalLength = signalLength;
+        consistentSignalCount++;
+        
+        // Valid signal - update timestamps for RPM calculation
+        blockingTimestamp = now;
+        previousTimestamp = currentTimestamp;
+        currentTimestamp = risingEdgeTime; // Use rising edge for timing consistency
+        
+        signalCount++;
+        signalPending = true;
+        risingEdgeDetected = false;
+        
+        // Mark that we have two timestamps ready for calculation
+        if (previousTimestamp > 0) {
+            timestampReady = true;
+        }
     }
 }
 
@@ -84,42 +161,8 @@ void RPMCounter::update() {
                     
                     // Apply bounds checking to filter out erroneous readings
                     if (calculatedRPM >= MIN_REASONABLE_RPM && calculatedRPM <= MAX_REASONABLE_RPM) {
-                        // Smart noise filtering: allow larger changes if motor speed might have changed
-                        bool acceptReading = false;
-                        
-                        if (currentRPM == 0.0) {
-                            // Always accept first reading
-                            acceptReading = true;
-                        } else {
-                            // Calculate percentage difference
-                            float percentDiff = abs(calculatedRPM - currentRPM) / currentRPM;
-                            
-                            // Accept if change is reasonable OR if we have multiple consistent readings
-                            static float lastCalculatedRPM = 0.0;
-                            static int consecutiveReadings = 0;
-                            
-                            if (percentDiff < 0.3) { // Accept changes up to 30%
-                                acceptReading = true;
-                                consecutiveReadings = 0;
-                            } else if (abs(calculatedRPM - lastCalculatedRPM) / calculatedRPM < 0.1) {
-                                // Two consecutive similar readings that differ from current - likely real change
-                                consecutiveReadings++;
-                                if (consecutiveReadings >= 2) {
-                                    acceptReading = true;
-                                    consecutiveReadings = 0;
-                                }
-                            } else {
-                                consecutiveReadings = 0;
-                            }
-                            
-                            lastCalculatedRPM = calculatedRPM;
-                        }
-                        
-                        if (acceptReading) {
                             lastIntervalMicros = interval;
-                            currentRPM = calculatedRPM;
-                        }
-                        // Else: reject this reading as likely noise, keep previous value
+                            currentRPM = calculatedRPM;                     
                     }
                 }
             }
@@ -129,6 +172,7 @@ void RPMCounter::update() {
         
         // Only print occasionally to avoid slowing down the system
         static unsigned long lastPrintTime = 0;
+        
         if (millis() - lastPrintTime > 1000) { // Print max once per second
             Serial.print("RPM: ");
             Serial.print(currentRPM, 1);
@@ -137,6 +181,7 @@ void RPMCounter::update() {
             Serial.print(", Interval: ");
             Serial.print(lastIntervalMicros / 1000.0, 2); // Convert to ms with 2 decimal places
             Serial.println(" ms)");
+            
             lastPrintTime = millis();
         }
     }
@@ -170,4 +215,19 @@ float RPMCounter::getCurrentRPM() {
 
 unsigned long RPMCounter::getTimeBetweenSignals() {
     return lastIntervalMicros;
+}
+
+void RPMCounter::startAccelerationTest() {
+    accelerationTestStartTime = micros();
+    accelerationTestActive = true;
+    Serial.println("Acceleration test timing started");
+}
+
+float RPMCounter::getAccelerationRPM() {
+    if (!accelerationTestActive) {
+        return 0.0; // No test running
+    }
+    
+    // Use the real-time RPM calculation instead of trying to calculate from total count
+    return getCurrentRPM();
 }

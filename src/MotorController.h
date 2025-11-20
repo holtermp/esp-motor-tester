@@ -12,6 +12,12 @@ class MotorController {
     static bool isRunning();
     static unsigned long getLastUpdateTime();
     
+    // Acceleration test functionality
+    static void startAccelerationTest();
+    static bool isAccelerationTestRunning();
+    static void updateAccelerationTest(); // Call in main loop
+    static unsigned long getAccelerationTestResult(); // Returns time in ms, 0 if test not complete
+    
     // Predefined speed levels
     static const int SPEED_OFF = 0;
     static const int SPEED_25 = 25;
@@ -28,6 +34,21 @@ class MotorController {
     static int currentSpeed;
     static bool motorRunning;
     static unsigned long lastUpdateTime;
+    
+    // Acceleration test variables
+    static bool accelerationTestActive;
+    static unsigned long testStartTime;
+    static unsigned long testCompletionTime;
+    static float targetRPM;
+    static bool targetRPMReached;
+    
+    // Multi-test sequence variables
+    static const float RPM_TARGETS[4]; // Array of target RPMs
+    static int currentTestIndex;
+    static unsigned long targetTimes[4]; // Store time for each target
+    static bool allTestsComplete;
+    static bool waitingBetweenTests;
+    static unsigned long pauseStartTime;
     
     static void updateMotor();
     static int speedToPWM(int percentage);

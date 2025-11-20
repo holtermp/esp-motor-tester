@@ -52,14 +52,30 @@ void setup() {
 }
 
 void loop() {
-  // Update all services
-  MDNSService::update();
-  OTAService::handle();
-  WebServer::handle();
+  // Check if acceleration test is running - prioritize for maximum accuracy
+  bool testRunning = MotorController::isAccelerationTestRunning();
   
-  // Process RPM counter signals
-  RPMCounter::update();
-  
-  // Keep the main loop responsive
-  delay(10);
+  if (testRunning) {
+    // During acceleration test: minimize interference for maximum precision
+    // Only update critical components
+    RPMCounter::update();
+    MotorController::updateAccelerationTest();
+    
+    // Minimal delay for faster loop during test
+    delayMicroseconds(100); // 0.1ms instead of 10ms
+  } else {
+    // Normal operation: update all services
+    MDNSService::update();
+    OTAService::handle();
+    WebServer::handle();
+    
+    // Process RPM counter signals
+    RPMCounter::update();
+    
+    // Update acceleration test if running
+    MotorController::updateAccelerationTest();
+    
+    // Keep the main loop responsive
+    delay(10);
+  }
 }
