@@ -151,9 +151,20 @@ document.getElementById('testResult').innerHTML='<span style="color:blue">Gettin
 fetch('/api/motor-test/result')
 .then(r=>r.json()).then(d=>{
 if(d.samples){
-document.getElementById('testResult').innerHTML='<span style="color:green">Test completed with '+d.samples.length+' samples. Graph displayed below.</span>';
+let resultText = '<span style="color:green">Test completed with '+d.samples.length+' samples.</span>';
+if(d.analysis){
+resultText += '<br><strong>Time to Top RPM:</strong><br>';
+resultText += '• Threshold Method: '+d.analysis.timeToTopRPM_ms.thresholdMethod+'ms<br>';
+resultText += '• Moving Average: '+d.analysis.timeToTopRPM_ms.movingAverageMethod+'ms<br>';
+resultText += '• Settling Method: '+d.analysis.timeToTopRPM_ms.settlingMethod+'ms<br>';
+resultText += '<small>Max RPM: '+d.analysis.maxRPM+' | Threshold: '+d.analysis.parameters.thresholdPercent+'%</small>';
+if(d.timing){
+resultText += '<br><small>Actual frequency: '+d.timing.actualSampleFrequencyHz+'Hz ('+d.timing.actualSampleIntervalMs+'ms/sample)</small>';
+}
+}
+document.getElementById('testResult').innerHTML=resultText;
 console.log('Motor Test Results:',d);
-displayChart(d.samples);
+displayChart(d.samples, d.analysis, d.timing);
 }else{
 document.getElementById('testResult').innerHTML='<span style="color:orange">'+d.message+'</span>';
 }
@@ -162,16 +173,17 @@ document.getElementById('testResult').innerHTML='<span style="color:red">Error g
 console.log(e);
 });
 }
-function displayChart(samples){
+function displayChart(samples, analysis, timing){
 const ctx=document.getElementById('rpmChart').getContext('2d');
 document.getElementById('chartContainer').style.display='block';
-const labels=samples.map((v,i)=>(i*10)+'ms');
-if(rpmChart){rpmChart.destroy();}
-rpmChart=new Chart(ctx,{
-type:'line',
-data:{
-labels:labels,
-datasets:[{
+
+// Use actual timing data if available, otherwise fallback to target interval
+const sampleIntervalMs = (timing && timing.actualSampleIntervalMs) ? 
+                         timing.actualSampleIntervalMs : 10;
+const labels=samples.map((v,i)=>(i*sampleIntervalMs).toFixed(1)+'ms');
+
+// Prepare datasets
+let datasets=[{
 label:'RPM',
 data:samples,
 borderColor:'#007bff',
@@ -179,7 +191,35 @@ backgroundColor:'rgba(0,123,255,0.1)',
 borderWidth:2,
 fill:true,
 tension:0.1
-}]
+}];
+
+// Add analysis markers if available
+if(analysis && analysis.timeToTopRPM_ms){
+const thresholdIndex = Math.floor(analysis.timeToTopRPM_ms.thresholdMethod/sampleIntervalMs);
+const movingAvgIndex = Math.floor(analysis.timeToTopRPM_ms.movingAverageMethod/sampleIntervalMs);
+const settlingIndex = Math.floor(analysis.timeToTopRPM_ms.settlingMethod/sampleIntervalMs);
+const maxRPM = analysis.maxRPM;
+const threshold = maxRPM * (analysis.parameters.thresholdPercent/100);
+
+// Add threshold line
+datasets.push({
+label:'95% Threshold ('+threshold.toFixed(0)+' RPM)',
+data:new Array(samples.length).fill(threshold),
+borderColor:'#ff6b35',
+backgroundColor:'rgba(255,107,53,0.1)',
+borderWidth:1,
+borderDash:[5,5],
+fill:false,
+pointRadius:0
+});
+}
+
+if(rpmChart){rpmChart.destroy();}
+rpmChart=new Chart(ctx,{
+type:'line',
+data:{
+labels:labels,
+datasets:datasets
 },
 options:{
 responsive:true,
@@ -197,7 +237,11 @@ beginAtZero:true
 }
 },
 plugins:{
-title:{display:true,text:'Motor Test - RPM vs Time',font:{size:16}},
+title:{
+display:true,
+text:'Motor Test - RPM vs Time'+(timing?' ('+timing.actualSampleFrequencyHz.toFixed(1)+'Hz sampling)':''),
+font:{size:16}
+},
 legend:{display:true,position:'top'}
 },
 animation:{duration:1000}
