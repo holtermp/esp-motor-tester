@@ -6,9 +6,11 @@
 #endif
 #include "RPMCounter.h"
 #include "MotorController.h"
+#include "MotorTest.h"
 
 AsyncWebServer WebServer::server(80);
 bool WebServer::isStarted = false;
+MotorTest* WebServer::motorTest = nullptr;
 
 void WebServer::begin() {
   if (isStarted) return;
@@ -25,25 +27,32 @@ void WebServer::handle() {
   // This method exists for consistency with other services
 }
 
+void WebServer::setMotorTest(MotorTest* test) {
+  motorTest = test;
+}
+
 void WebServer::setupRoutes() {
   // Serve a minimal home page that loads content via AJAX
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
     const char* html = R"(<!DOCTYPE html>
 <html><head><title>ESP Motor Tester</title>
 <meta name='viewport' content='width=device-width, initial-scale=1'>
+<script src='https://cdn.jsdelivr.net/npm/chart.js'></script>
 <style>
 body{font-family:Arial;margin:0;padding:20px;background:#f0f0f0}
-.container{max-width:800px;margin:0 auto;background:white;padding:20px;border-radius:10px}
+.container{max-width:1000px;margin:0 auto;background:white;padding:20px;border-radius:10px}
 h1{color:#333;text-align:center}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin:20px 0}
 .box{background:#f8f9fa;padding:15px;border-radius:5px}
 .status{text-align:center;background:#d4edda;color:#155724;padding:10px;border-radius:5px;margin:20px 0}
 .control{text-align:center;margin:20px 0;padding:15px;background:#e7f3ff;border-radius:5px}
 .motor{text-align:center;margin:20px 0;padding:15px;background:#f8f9fa;border-radius:5px;border:2px solid #28a745}
+.graph{margin:20px 0;padding:15px;background:#ffffff;border-radius:5px;border:1px solid #ddd}
 .buttons{display:flex;justify-content:center;gap:10px;margin:15px 0;flex-wrap:wrap}
 .btn{padding:8px 12px;background:#fff;border:2px solid #28a745;border-radius:5px;cursor:pointer}
 .btn.active{background:#28a745;color:white}
 .rpm{font-size:1.5em;font-weight:bold;color:#007bff}
+#chartContainer{height:400px;display:none;margin-top:20px}
 </style></head><body>
 <div class='container'>
 <h1>ESP Motor Tester</h1>
@@ -64,8 +73,14 @@ h1{color:#333;text-align:center}
 </div>
 <div style='margin-top:15px;'>
 <button class='btn' onclick='startAccelerationTest()' style='background:#ff6b35;border-color:#ff6b35;color:white;'>Acceleration Test</button>
+<button class='btn' onclick='startMotorTest()' style='background:#007bff;border-color:#007bff;color:white;margin-left:10px;'>Start Motor Test</button>
+<button class='btn' onclick='getTestResult()' style='background:#28a745;border-color:#28a745;color:white;margin-left:10px;'>Get Test Result</button>
 <div id='testResult' style='margin-top:10px;font-weight:bold;'></div>
 </div></div>
+<div class='graph' id='chartContainer'>
+<h3>Motor Test Results</h3>
+<canvas id='rpmChart' width='800' height='400'></canvas>
+</div>
 <div class='grid'>
 <div class='box'><h3>Device</h3><div id='device'>Loading...</div></div>
 <div class='box'><h3>RPM Sensor</h3><div id='sensor'>Loading...</div></div>
@@ -74,6 +89,7 @@ h1{color:#333;text-align:center}
 </div></div>
 <script>
 let interval=null;
+let rpmChart=null;
 function toggleLive(){
 let cb=document.getElementById('live');
 if(cb.checked){interval=setInterval(update,2000);update();}
@@ -87,7 +103,7 @@ document.getElementById('speed').textContent=d.motor.speed;
 document.getElementById('device').innerHTML='Free Heap: '+d.freeHeap+'<br>IP: '+d.ip;
 document.getElementById('sensor').innerHTML='Pin: D4<br>RPM: '+d.rpm.current+'<br>Signals: '+d.rpm.signalCount;
 document.getElementById('motor').innerHTML='Speed: '+d.motor.speed+'%<br>Running: '+(d.motor.running?'Yes':'No')+'<br>PWM: 0-255';
-document.getElementById('network').innerHTML='SSID: '+d.ssid+'<br>Signal: '+d.rssi+' dBm';
+document.getElementById('network').innerHTML='SSID: '+d.ssid+'<br>Signal: '+d.rssi+' dBm'+(d.motorTest?' Test: '+(d.motorTest.running?'Running':'Idle'):'');
 updateBtns(d.motor.speed);
 }).catch(e=>{document.getElementById('status').textContent='Error';});}
 function setSpeed(s){
@@ -117,6 +133,77 @@ document.getElementById('testResult').innerHTML='<span style="color:red">Test fa
 document.getElementById('testResult').innerHTML='<span style="color:red">Error starting test</span>';
 console.log(e);
 });}
+function startMotorTest(){
+document.getElementById('testResult').innerHTML='<span style="color:orange">Starting motor test...</span>';
+fetch('/api/motor-test/start',{method:'POST'})
+.then(r=>r.json()).then(d=>{
+if(d.success){
+document.getElementById('testResult').innerHTML='<span style="color:green">Motor test started! It will take ~5 seconds.</span>';
+}else{
+document.getElementById('testResult').innerHTML='<span style="color:red">Failed to start motor test</span>';
+}
+}).catch(e=>{
+document.getElementById('testResult').innerHTML='<span style="color:red">Error starting motor test</span>';
+console.log(e);
+});}
+function getTestResult(){
+document.getElementById('testResult').innerHTML='<span style="color:blue">Getting test result...</span>';
+fetch('/api/motor-test/result')
+.then(r=>r.json()).then(d=>{
+if(d.samples){
+document.getElementById('testResult').innerHTML='<span style="color:green">Test completed with '+d.samples.length+' samples. Graph displayed below.</span>';
+console.log('Motor Test Results:',d);
+displayChart(d.samples);
+}else{
+document.getElementById('testResult').innerHTML='<span style="color:orange">'+d.message+'</span>';
+}
+}).catch(e=>{
+document.getElementById('testResult').innerHTML='<span style="color:red">Error getting test result</span>';
+console.log(e);
+});
+}
+function displayChart(samples){
+const ctx=document.getElementById('rpmChart').getContext('2d');
+document.getElementById('chartContainer').style.display='block';
+const labels=samples.map((v,i)=>(i*10)+'ms');
+if(rpmChart){rpmChart.destroy();}
+rpmChart=new Chart(ctx,{
+type:'line',
+data:{
+labels:labels,
+datasets:[{
+label:'RPM',
+data:samples,
+borderColor:'#007bff',
+backgroundColor:'rgba(0,123,255,0.1)',
+borderWidth:2,
+fill:true,
+tension:0.1
+}]
+},
+options:{
+responsive:true,
+maintainAspectRatio:false,
+scales:{
+x:{
+display:true,
+title:{display:true,text:'Time (ms)'},
+ticks:{maxTicksLimit:10}
+},
+y:{
+display:true,
+title:{display:true,text:'RPM'},
+beginAtZero:true
+}
+},
+plugins:{
+title:{display:true,text:'Motor Test - RPM vs Time',font:{size:16}},
+legend:{display:true,position:'top'}
+},
+animation:{duration:1000}
+}
+});
+}
 update();
 </script></body></html>)";
     request->send(200, "text/html", html);
@@ -143,7 +230,6 @@ update();
   server.on("/api/motor", HTTP_GET, [](AsyncWebServerRequest *request){
     String json = "{";
     json += "\"speed\":" + String(MotorController::getCurrentSpeed()) + ",";
-    json += "\"running\":" + String(MotorController::isRunning() ? "true" : "false") + ",";
     json += "\"lastUpdate\":" + String(MotorController::getLastUpdateTime()) + ",";
     json += "\"timestamp\":" + String(millis());
     json += "}";
@@ -188,9 +274,14 @@ update();
     json += "},";
     json += "\"motor\":{";
     json += "\"speed\":" + String(MotorController::getCurrentSpeed()) + ",";
-    json += "\"running\":" + String(MotorController::isRunning() ? "true" : "false") + ",";
-    json += "\"lastUpdate\":" + String(MotorController::getLastUpdateTime());
+    json += "\"lastUpdate\":" + String(MotorController::getLastUpdateTime()) + ",";
+    json += "\"running\":" + String(MotorController::getCurrentSpeed() > 0 ? "true" : "false");
     json += "},";
+    if (motorTest != nullptr) {
+      json += "\"motorTest\":{";
+      json += "\"running\":" + String(motorTest->isRunning() ? "true" : "false");
+      json += "},";
+    }
     json += "\"freeHeap\":" + String(ESP.getFreeHeap()) + ",";
     json += "\"ip\":\"" + WiFi.localIP().toString() + "\",";
     json += "\"ssid\":\"" + WiFi.SSID() + "\",";
@@ -205,25 +296,76 @@ update();
   
   // Acceleration test endpoint
   server.on("/api/motor/acceleration-test", HTTP_POST, [](AsyncWebServerRequest *request){
-    String response = "{";
+    String response = "{currently not impelemented}";    
+    AsyncWebServerResponse *resp = request->beginResponse(500, "application/json", response);
+    resp->addHeader("Access-Control-Allow-Origin", "*");
+    request->send(resp);
+  });
+  
+  // Motor test start endpoint
+  server.on("/api/motor-test/start", HTTP_POST, [](AsyncWebServerRequest *request){
+    String response;
+    int responseCode = 500;
     
-    // Check if test is already running
-    if (MotorController::isAccelerationTestRunning()) {
-      response += "\"success\":false,";
-      response += "\"error\":\"Test already running\",";
+    if (motorTest != nullptr) {
+      if (!motorTest->isRunning()) {
+        motorTest->start(TEST_TYPE_ACCELERATION);
+        response = "{\"success\":true,\"message\":\"Motor test started\"}";
+        responseCode = 200;
+      } else {
+        response = "{\"success\":false,\"message\":\"Test already running\"}";
+        responseCode = 409; // Conflict
+      }
+    } else {
+      response = "{\"success\":false,\"message\":\"Motor test not initialized\"}";
+      responseCode = 500;
+    }
+    
+    AsyncWebServerResponse *resp = request->beginResponse(responseCode, "application/json", response);
+    resp->addHeader("Access-Control-Allow-Origin", "*");
+    request->send(resp);
+  });
+  
+  // Motor test result endpoint
+  server.on("/api/motor-test/result", HTTP_GET, [](AsyncWebServerRequest *request){
+    String response;
+    int responseCode = 200;
+    
+    if (motorTest != nullptr) {
+      String result = motorTest->getResult();
+      if (result.startsWith("{")) {
+        // Valid JSON result
+        response = result;
+      } else {
+        // Text message, wrap in JSON
+        response = "{\"message\":\"" + result + "\"}";
+      }
+    } else {
+      response = "{\"message\":\"Motor test not initialized\"}";
+      responseCode = 500;
+    }
+    
+    AsyncWebServerResponse *resp = request->beginResponse(responseCode, "application/json", response);
+    resp->addHeader("Access-Control-Allow-Origin", "*");
+    request->send(resp);
+  });
+  
+  // Motor test status endpoint
+  server.on("/api/motor-test/status", HTTP_GET, [](AsyncWebServerRequest *request){
+    String response;
+    int responseCode = 200;
+    
+    if (motorTest != nullptr) {
+      response = "{";
+      response += "\"running\":" + String(motorTest->isRunning() ? "true" : "false") + ",";
       response += "\"timestamp\":" + String(millis());
       response += "}";
     } else {
-      // Start the acceleration test
-      MotorController::startAccelerationTest();
-      
-      response += "\"success\":true,";
-      response += "\"message\":\"Acceleration test started\",";
-      response += "\"timestamp\":" + String(millis());
-      response += "}";
+      response = "{\"running\":false,\"error\":\"Motor test not initialized\"}";
+      responseCode = 500;
     }
     
-    AsyncWebServerResponse *resp = request->beginResponse(200, "application/json", response);
+    AsyncWebServerResponse *resp = request->beginResponse(responseCode, "application/json", response);
     resp->addHeader("Access-Control-Allow-Origin", "*");
     request->send(resp);
   });

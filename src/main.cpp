@@ -6,9 +6,13 @@
 #include "WebServer.h"
 #include "RPMCounter.h"
 #include "MotorController.h"
+#include "MotorTest.h"
 
 // Pin definitions
 #define RPM_SENSOR_PIN D4
+
+// Global motor test instance
+MotorTest motorTest;
 
 void setup() {
   Serial.begin(115200);
@@ -38,6 +42,9 @@ void setup() {
   OTAService::begin();
   WebServer::begin();
   
+  // Set motor test instance for web server
+  WebServer::setMotorTest(&motorTest);
+  
   // Initialize RPM counter
   RPMCounter::begin(RPM_SENSOR_PIN);
   
@@ -53,16 +60,13 @@ void setup() {
 
 void loop() {
   // Check if acceleration test is running - prioritize for maximum accuracy
-  bool testRunning = MotorController::isAccelerationTestRunning();
+  bool testRunning = motorTest.isRunning();
   
   if (testRunning) {
     // During acceleration test: minimize interference for maximum precision
     // Only update critical components
     RPMCounter::update();
-    MotorController::updateAccelerationTest();
-    
-    // Minimal delay for faster loop during test
-    delayMicroseconds(100); // 0.1ms instead of 10ms
+    motorTest.update();
   } else {
     // Normal operation: update all services
     MDNSService::update();
@@ -70,11 +74,7 @@ void loop() {
     WebServer::handle();
     
     // Process RPM counter signals
-    RPMCounter::update();
-    
-    // Update acceleration test if running
-    MotorController::updateAccelerationTest();
-    
+    RPMCounter::update();   
     // Keep the main loop responsive
     delay(100);
   }

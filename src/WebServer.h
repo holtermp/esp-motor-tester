@@ -8,14 +8,19 @@
 #endif
 #include <ESPAsyncWebServer.h>
 
+// Forward declaration
+class MotorTest;
+
 class WebServer {
   public:
     static void begin();
     static void handle();
+    static void setMotorTest(MotorTest* test);
     
   private:
     static AsyncWebServer server;
     static bool isStarted;
+    static MotorTest* motorTest;
     
     static void setupRoutes();
     static void handleNotFound(AsyncWebServerRequest *request);

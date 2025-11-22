@@ -146,7 +146,7 @@ float RPMCounter::getCurrentRPM()
     // Check if the reading is too old (more than 2 seconds = motor likely stopped)
     if (millis() - lastSignalTime > 2000)
     {
-        return 0.0;
+  //      return 0.0;
     }
 
     return currentRPM;
