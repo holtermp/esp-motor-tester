@@ -76,6 +76,6 @@ void loop() {
     MotorController::updateAccelerationTest();
     
     // Keep the main loop responsive
-    delay(10);
+    delay(100);
   }
 }

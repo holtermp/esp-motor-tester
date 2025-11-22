@@ -3,16 +3,17 @@
 
 #include <Arduino.h>
 
+#define BUFFER_SIZE 20
+
 class RPMCounter {
 public:
     static void begin(uint8_t pin);
     static void update(); // Call this regularly in loop() to process pending signals
-    static void reset(); // Reset all counters and RPM values
     static void startAccelerationTest(); // Mark start time for acceleration test
     static float getAccelerationRPM(); // Get RPM based on time since test start
     
     // ISR function - must be public and static for interrupt attachment
-    static void IRAM_ATTR handleSignalChange();
+    static void IRAM_ATTR handleSignal();
     
     // Getters for RPM data
     static unsigned long getSignalCount();
@@ -22,7 +23,13 @@ public:
     static unsigned long getTimeBetweenSignals(); // Get last interval in microseconds
     
 private:
+    static volatile unsigned long signalTimestampsWork[BUFFER_SIZE];
+    static volatile unsigned long signalTimestampsRead[BUFFER_SIZE];
+    static unsigned int timestampIndex;
+
     static volatile bool signalPending;
+    static volatile unsigned long lastOutputTime;
+    
     static volatile unsigned long signalCount;
     static volatile unsigned long lastSignalTime;
     static volatile unsigned long blockingTimestamp;
@@ -61,8 +68,8 @@ private:
     static const unsigned long DEBOUNCE_TIME_US = 10; // 10μs in microseconds
     
     // Maximum reasonable RPM to filter out erroneous readings
-    static constexpr float MAX_REASONABLE_RPM = 25000.0; // Reject readings above 25k RPM
-    static constexpr float MIN_REASONABLE_RPM = 10.0;     // Reject readings below 10 RPM
+    static constexpr float MAX_REASONABLE_RPM = 35000.0; // Reject readings above 25k RPM
+    
 };
 
 #endif

@@ -182,7 +182,6 @@ void MotorController::updateAccelerationTest() {
     waitingBetweenTests = false;
     
     // CRITICAL: Reset RPM counter to ensure clean start
-    RPMCounter::reset();
     
     setSpeed(100);
     testStartTime = currentTime; // Reset timer for acceleration measurement
