@@ -12,8 +12,6 @@ uint8_t RPMCounter::sensorPin = 0;
 volatile unsigned long RPMCounter::currentTimestamp = 0;
 volatile unsigned long RPMCounter::previousTimestamp = 0;
 volatile bool RPMCounter::timestampReady = false;
-volatile unsigned long RPMCounter::accelerationTestStartTime = 0;
-volatile bool RPMCounter::accelerationTestActive = false;
 volatile unsigned long RPMCounter::risingEdgeTime = 0;
 volatile unsigned long RPMCounter::fallingEdgeTime = 0;
 volatile bool RPMCounter::risingEdgeDetected = false;
@@ -31,8 +29,6 @@ void RPMCounter::begin(uint8_t pin)
     signalCount = 0;
     lastSignalTime = 0;
     currentRPM = 0.0;
-    accelerationTestStartTime = 0;
-    accelerationTestActive = false;
     lastOutputTime = 0;
 
     timestampIndex = 0;
@@ -155,22 +151,4 @@ float RPMCounter::getCurrentRPM()
 unsigned long RPMCounter::getTimeBetweenSignals()
 {
     return lastIntervalMicros;
-}
-
-void RPMCounter::startAccelerationTest()
-{
-    accelerationTestStartTime = micros();
-    accelerationTestActive = true;
-    Serial.println("Acceleration test timing started");
-}
-
-float RPMCounter::getAccelerationRPM()
-{
-    if (!accelerationTestActive)
-    {
-        return 0.0; // No test running
-    }
-
-    // Use the real-time RPM calculation instead of trying to calculate from total count
-    return getCurrentRPM();
 }

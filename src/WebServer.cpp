@@ -72,8 +72,7 @@ h1{color:#333;text-align:center}
 <button class='btn' onclick='setSpeed(100)'>100%</button>
 </div>
 <div style='margin-top:15px;'>
-<button class='btn' onclick='startAccelerationTest()' style='background:#ff6b35;border-color:#ff6b35;color:white;'>Acceleration Test</button>
-<button class='btn' onclick='startMotorTest()' style='background:#007bff;border-color:#007bff;color:white;margin-left:10px;'>Start Motor Test</button>
+<button class='btn' onclick='startMotorTest()' style='background:#007bff;border-color:#007bff;color:white;'>Start Motor Test</button>
 <button class='btn' onclick='getTestResult()' style='background:#28a745;border-color:#28a745;color:white;margin-left:10px;'>Get Test Result</button>
 <div id='testResult' style='margin-top:10px;font-weight:bold;'></div>
 </div></div>
@@ -119,20 +118,6 @@ let speeds=[0,25,50,75,100];
 let idx=speeds.indexOf(speed);
 if(idx>=0)btns[idx].classList.add('active');
 }
-function startAccelerationTest(){
-document.getElementById('testResult').innerHTML='<span style="color:orange">Running acceleration test...</span>';
-fetch('/api/motor/acceleration-test',{method:'POST'})
-.then(r=>r.json()).then(d=>{
-if(d.success){
-document.getElementById('testResult').innerHTML='<span style="color:green">Test started! Check serial output for results.</span>';
-setTimeout(()=>{document.getElementById('testResult').innerHTML='';},5000);
-}else{
-document.getElementById('testResult').innerHTML='<span style="color:red">Test failed to start</span>';
-}
-}).catch(e=>{
-document.getElementById('testResult').innerHTML='<span style="color:red">Error starting test</span>';
-console.log(e);
-});}
 function startMotorTest(){
 document.getElementById('testResult').innerHTML='<span style="color:orange">Starting motor test...</span>';
 fetch('/api/motor-test/start',{method:'POST'})
@@ -338,14 +323,6 @@ update();
     AsyncWebServerResponse *response = request->beginResponse(200, "application/json", json);
     response->addHeader("Access-Control-Allow-Origin", "*");
     request->send(response);
-  });
-  
-  // Acceleration test endpoint
-  server.on("/api/motor/acceleration-test", HTTP_POST, [](AsyncWebServerRequest *request){
-    String response = "{currently not impelemented}";    
-    AsyncWebServerResponse *resp = request->beginResponse(500, "application/json", response);
-    resp->addHeader("Access-Control-Allow-Origin", "*");
-    request->send(resp);
   });
   
   // Motor test start endpoint

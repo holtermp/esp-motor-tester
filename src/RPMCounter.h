@@ -9,8 +9,6 @@ class RPMCounter {
 public:
     static void begin(uint8_t pin);
     static void update(); // Call this regularly in loop() to process pending signals
-    static void startAccelerationTest(); // Mark start time for acceleration test
-    static float getAccelerationRPM(); // Get RPM based on time since test start
     
     // ISR function - must be public and static for interrupt attachment
     static void IRAM_ATTR handleSignal();
@@ -52,10 +50,6 @@ private:
     // Tightened range based on actual measurements to filter multiple apertures
     static const unsigned long MIN_SIGNAL_LENGTH_US = 600;  // 600μs minimum (more selective)
     static const unsigned long MAX_SIGNAL_LENGTH_US = 1400; // 1.4ms maximum (more selective)
-    
-    // Acceleration test timing
-    static volatile unsigned long accelerationTestStartTime; // Test start time in microseconds
-    static volatile bool accelerationTestActive; // Flag to track if test is active
     
     // Simple two-timestamp approach - capture in ISR, process in main thread
     static volatile unsigned long currentTimestamp;

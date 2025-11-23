@@ -59,11 +59,11 @@ void setup() {
 }
 
 void loop() {
-  // Check if acceleration test is running - prioritize for maximum accuracy
+  // Check if motor test is running - prioritize for maximum accuracy
   bool testRunning = motorTest.isRunning();
   
   if (testRunning) {
-    // During acceleration test: minimize interference for maximum precision
+    // During motor test: minimize interference for maximum precision
     // Only update critical components
     RPMCounter::update();
     motorTest.update();
