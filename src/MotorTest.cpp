@@ -42,10 +42,8 @@ bool MotorTest::isRunning() {
 
 String MotorTest::getResult() {
     if (!running && testType == TEST_TYPE_ACCELERATION) {
-        // Calculate time-to-top-RPM using different methods  
-        u_short timeToTop_Threshold = findTimeToTopRPM_ThresholdMethod();
+        // Calculate time-to-top-RPM using moving average method only
         u_short timeToTop_MovingAvg = findTimeToTopRPM_MovingAverageMethod();
-        u_short timeToTop_Settling = findTimeToTopRPM_SettlingMethod();
         float maxRPM = findMaxRPM();
         
         // Calculate actual sample interval based on measured frequency
@@ -69,14 +67,8 @@ String MotorTest::getResult() {
         json += "},";
         json += "\"analysis\":{";
         json += "\"maxRPM\":" + String(maxRPM, 1) + ",";
-        json += "\"timeToTopRPM_ms\":{";
-        json += "\"thresholdMethod\":" + String(timeToTop_Threshold * actualSampleIntervalMs, 1) + ",";
-        json += "\"movingAverageMethod\":" + String(timeToTop_MovingAvg * actualSampleIntervalMs, 1) + ",";
-        json += "\"settlingMethod\":" + String(timeToTop_Settling * actualSampleIntervalMs, 1);
-        json += "},";
+        json += "\"timeToTopRPM_ms\":" + String(timeToTop_MovingAvg * actualSampleIntervalMs, 1) + ",";
         json += "\"parameters\":{";
-        json += "\"thresholdPercent\":" + String(TOP_RPM_THRESHOLD_PERCENT) + ",";
-        json += "\"settlingTolerance\":" + String(SETTLING_TOLERANCE_PERCENT) + ",";
         json += "\"movingAverageWindow\":" + String(MOVING_AVERAGE_WINDOW);
         json += "}";
         json += "}";
@@ -108,55 +100,18 @@ float MotorTest::findMaxRPM() {
     return maxRPM;
 }
 
-// Method 1: Threshold Method - Find when RPM first reaches X% of max
-u_short MotorTest::findTimeToTopRPM_ThresholdMethod() {
-    float maxRPM = findMaxRPM();
-    float threshold = maxRPM * (TOP_RPM_THRESHOLD_PERCENT / 100.0);
-    
-    for (u_short i = 0; i < sampleIndex; i++) {
-        if (samples[i] >= threshold) {
-            return i; // Return sample index (time = index * SLEEP_BETWEEN_SAMPLES_MS)
-        }
-    }
-    return sampleIndex - 1; // If never reached, return last sample
-}
-
-// Method 2: Moving Average Method - Find when moving average reaches threshold
+// Moving Average Method - Find when moving average reaches close to max RPM
 u_short MotorTest::findTimeToTopRPM_MovingAverageMethod() {
     float maxRPM = findMaxRPM();
-    float threshold = maxRPM * (TOP_RPM_THRESHOLD_PERCENT / 100.0);
+    float targetRPM = maxRPM * 0.95; // Look for when we reach 95% of max RPM
     
     for (u_short i = MOVING_AVERAGE_WINDOW - 1; i < sampleIndex; i++) {
         float movingAvg = calculateMovingAverage(i, MOVING_AVERAGE_WINDOW);
-        if (movingAvg >= threshold) {
+        if (movingAvg >= targetRPM) {
             return i;
         }
     }
     return sampleIndex - 1;
-}
-
-// Method 3: Settling Method - Find when RPM stays within tolerance for consecutive samples
-u_short MotorTest::findTimeToTopRPM_SettlingMethod() {
-    float maxRPM = findMaxRPM();
-    float targetRPM = maxRPM * (TOP_RPM_THRESHOLD_PERCENT / 100.0);
-    float tolerance = targetRPM * (SETTLING_TOLERANCE_PERCENT / 100.0);
-    
-    u_short consecutiveCount = 0;
-    
-    for (u_short i = 0; i < sampleIndex; i++) {
-        float movingAvg = calculateMovingAverage(i, min(MOVING_AVERAGE_WINDOW, i + 1));
-        
-        // Check if within tolerance
-        if (abs(movingAvg - targetRPM) <= tolerance) {
-            consecutiveCount++;
-            if (consecutiveCount >= SETTLING_WINDOW) {
-                return i - SETTLING_WINDOW + 1; // Return when settling started
-            }
-        } else {
-            consecutiveCount = 0; // Reset counter if out of tolerance
-        }
-    }
-    return sampleIndex - 1; // If never settled
 }
 
 // Calculate the actual sample frequency based on measured test duration

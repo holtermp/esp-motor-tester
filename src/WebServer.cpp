@@ -153,11 +153,8 @@ fetch('/api/motor-test/result')
 if(d.samples){
 let resultText = '<span style="color:green">Test completed with '+d.samples.length+' samples.</span>';
 if(d.analysis){
-resultText += '<br><strong>Time to Top RPM:</strong><br>';
-resultText += '• Threshold Method: '+d.analysis.timeToTopRPM_ms.thresholdMethod+'ms<br>';
-resultText += '• Moving Average: '+d.analysis.timeToTopRPM_ms.movingAverageMethod+'ms<br>';
-resultText += '• Settling Method: '+d.analysis.timeToTopRPM_ms.settlingMethod+'ms<br>';
-resultText += '<small>Max RPM: '+d.analysis.maxRPM+' | Threshold: '+d.analysis.parameters.thresholdPercent+'%</small>';
+resultText += '<br><strong>Time to Top RPM: '+d.analysis.timeToTopRPM_ms+'ms</strong><br>';
+resultText += '<small>Max RPM: '+d.analysis.maxRPM+' | Window: '+d.analysis.parameters.movingAverageWindow+' samples</small>';
 if(d.timing){
 resultText += '<br><small>Actual frequency: '+d.timing.actualSampleFrequencyHz+'Hz ('+d.timing.actualSampleIntervalMs+'ms/sample)</small>';
 }
@@ -193,25 +190,29 @@ fill:true,
 tension:0.1
 }];
 
-// Add analysis markers if available
+// Add time-to-top-RPM marker if available - using point marker approach
 if(analysis && analysis.timeToTopRPM_ms){
-const thresholdIndex = Math.floor(analysis.timeToTopRPM_ms.thresholdMethod/sampleIntervalMs);
-const movingAvgIndex = Math.floor(analysis.timeToTopRPM_ms.movingAverageMethod/sampleIntervalMs);
-const settlingIndex = Math.floor(analysis.timeToTopRPM_ms.settlingMethod/sampleIntervalMs);
-const maxRPM = analysis.maxRPM;
-const threshold = maxRPM * (analysis.parameters.thresholdPercent/100);
-
-// Add threshold line
+const timeIndex = Math.floor(analysis.timeToTopRPM_ms / sampleIntervalMs);
+if(timeIndex >= 0 && timeIndex < samples.length) {
+// Create a point dataset to mark the time-to-top-RPM
+const markerData = new Array(samples.length).fill(null);
+markerData[timeIndex] = samples[timeIndex];
 datasets.push({
-label:'95% Threshold ('+threshold.toFixed(0)+' RPM)',
-data:new Array(samples.length).fill(threshold),
-borderColor:'#ff6b35',
-backgroundColor:'rgba(255,107,53,0.1)',
-borderWidth:1,
-borderDash:[5,5],
+label:'Time to Top RPM: '+analysis.timeToTopRPM_ms.toFixed(0)+'ms ('+samples[timeIndex].toFixed(0)+' RPM)',
+data: markerData,
+borderColor:'#28a745',
+backgroundColor:'#28a745',
+borderWidth:0,
 fill:false,
-pointRadius:0
+pointRadius:10,
+pointHoverRadius:12,
+pointBackgroundColor:'#28a745',
+pointBorderColor:'#ffffff',
+pointBorderWidth:3,
+showLine:false,
+pointStyle:'circle'
 });
+}
 }
 
 if(rpmChart){rpmChart.destroy();}
@@ -239,7 +240,8 @@ beginAtZero:true
 plugins:{
 title:{
 display:true,
-text:'Motor Test - RPM vs Time'+(timing?' ('+timing.actualSampleFrequencyHz.toFixed(1)+'Hz sampling)':''),
+text:'Motor Test - RPM vs Time'+(timing?' ('+timing.actualSampleFrequencyHz.toFixed(1)+'Hz sampling)':'')+
+(analysis && analysis.timeToTopRPM_ms ? ' - Moving Average Method' : ''),
 font:{size:16}
 },
 legend:{display:true,position:'top'}

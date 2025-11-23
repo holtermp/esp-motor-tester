@@ -11,9 +11,6 @@
 
 // Analysis parameters for time-to-top-RPM calculation
 #define MOVING_AVERAGE_WINDOW 5     // Number of samples for moving average
-#define SETTLING_TOLERANCE_PERCENT 2.0  // ±2% tolerance for settling time
-#define SETTLING_WINDOW 10          // Must stay within tolerance for this many samples
-#define TOP_RPM_THRESHOLD_PERCENT 95.0  // Consider 95% of max as "top RPM"
 
 
 
@@ -32,9 +29,7 @@ private:
     // Analysis methods
     float calculateMovingAverage(u_short index, u_short window);
     float findMaxRPM();
-    u_short findTimeToTopRPM_ThresholdMethod();
     u_short findTimeToTopRPM_MovingAverageMethod();
-    u_short findTimeToTopRPM_SettlingMethod();
     float calculateActualSampleFrequency();
     
 public:
