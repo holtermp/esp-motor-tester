@@ -100,7 +100,7 @@ document.getElementById('status').textContent='Online';
 document.getElementById('rpm').textContent=d.rpm.current+' RPM';
 document.getElementById('speed').textContent=d.motor.speed;
 document.getElementById('device').innerHTML='Free Heap: '+d.freeHeap+'<br>IP: '+d.ip;
-document.getElementById('sensor').innerHTML='Pin: D4<br>RPM: '+d.rpm.current+'<br>Signals: '+d.rpm.signalCount;
+document.getElementById('sensor').innerHTML='Pin: D6<br>RPM: '+d.rpm.current+'<br>Signals: '+d.rpm.signalCount;
 document.getElementById('motor').innerHTML='Speed: '+d.motor.speed+'%<br>Running: '+(d.motor.running?'Yes':'No')+'<br>PWM: 0-255';
 document.getElementById('network').innerHTML='SSID: '+d.ssid+'<br>Signal: '+d.rssi+' dBm'+(d.motorTest?' Test: '+(d.motorTest.running?'Running':'Idle'):'');
 updateBtns(d.motor.speed);

@@ -4,8 +4,8 @@
 This project includes high-speed RPM measurement functionality using an interrupt-based approach optimized for motors up to 21,000 RPM.
 
 ## Hardware Setup
-- **RPM Sensor Pin**: D4 (GPIO2)
-- **Connection**: Connect your RPM sensor signal wire to pin D4
+- **RPM Sensor Pin**: D6 (GPIO12)
+- **Connection**: Connect your RPM sensor signal wire to pin D6
 - **Pull-up**: The pin is configured with internal pull-up resistor
 - **Trigger**: Rising edge detection (LOW to HIGH transition)
 - **Max Speed**: Supports up to 21,000 RPM (350 Hz signal frequency)
@@ -13,7 +13,7 @@ This project includes high-speed RPM measurement functionality using an interrup
 ## Features Implemented
 
 ### RPMCounter Class
-- **High-speed interrupt-based signal detection** on pin D4
+- **High-speed interrupt-based signal detection** on pin D6
 - **Ultra-fast debouncing** with 0.5ms (500µs) minimum interval between valid signals
 - **Microsecond precision** timing for accurate high-speed measurement
 - **Serial output** for each detected signal with RPM calculation
@@ -82,7 +82,7 @@ The web interface now includes:
 ## Usage
 
 1. **Upload the firmware** to your ESP8266
-2. **Connect your RPM sensor** to pin D4
+2. **Connect your RPM sensor** to pin D6
 3. **Monitor serial output** at 115200 baud to see signal detection
 4. **View web interface** at `http://esp-racepi-motor-tester.local`
 
@@ -103,7 +103,7 @@ The web interface now includes:
 
 ## Testing
 You can test the RPM counter by:
-1. Connecting a button or switch to D4 and GND
+1. Connecting a button or switch to D6 and GND
 2. Pressing/releasing to generate rising edge signals
 3. Observing serial output for signal detection
 4. Checking the web interface for updated signal counts

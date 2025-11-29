@@ -8,9 +8,6 @@
 #include "MotorController.h"
 #include "MotorTest.h"
 
-// Pin definitions
-#define RPM_SENSOR_PIN D4
-
 // Global motor test instance
 MotorTest motorTest;
 
@@ -46,13 +43,13 @@ void setup() {
   WebServer::setMotorTest(&motorTest);
   
   // Initialize RPM counter
-  RPMCounter::begin(RPM_SENSOR_PIN);
+  RPMCounter::begin();
   
   // Initialize motor controller
   MotorController::begin();
   
   Serial.println("=== System Ready ===");
-  Serial.println("RPM measurement active on pin D4");
+  Serial.println("RPM measurement active on pin D6");
   Serial.println("Motor control active (L298N on D1, D2, D3)");
   Serial.println("Visit http://esp-racepi-motor-tester.local for web interface");
   Serial.println();

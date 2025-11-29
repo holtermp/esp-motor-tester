@@ -14,7 +14,7 @@ void MotorController::begin()
 
   // Set PWM frequency for motor control (higher frequency for smoother operation)
   // ESP8266 default is 1000Hz, motors typically work better with 10-20kHz
-  analogWriteFreq(1000); // 10kHz PWM frequency
+  analogWriteFreq(1000); // 1kHz PWM frequency
 
   // Stop motor initially
   setSpeed(0);

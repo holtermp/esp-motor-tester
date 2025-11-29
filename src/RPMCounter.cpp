@@ -12,19 +12,14 @@ uint8_t RPMCounter::sensorPin = 0;
 volatile unsigned long RPMCounter::currentTimestamp = 0;
 volatile unsigned long RPMCounter::previousTimestamp = 0;
 volatile bool RPMCounter::timestampReady = false;
-volatile unsigned long RPMCounter::risingEdgeTime = 0;
-volatile unsigned long RPMCounter::fallingEdgeTime = 0;
-volatile bool RPMCounter::risingEdgeDetected = false;
-volatile unsigned long RPMCounter::lastValidSignalLength = 0;
 volatile unsigned long RPMCounter::lastOutputTime = 0;
-volatile unsigned long RPMCounter::consistentSignalCount = 0;
 unsigned int RPMCounter::timestampIndex = 0;
 volatile unsigned long RPMCounter::signalTimestampsWork[BUFFER_SIZE] = {0};
-volatile unsigned long RPMCounter::signalTimestampsRead[BUFFER_SIZE] = {0};
+volatile unsigned long RPMCounter::signalTimestampsCopy[BUFFER_SIZE] = {0};
 
-void RPMCounter::begin(uint8_t pin)
+void RPMCounter::begin()
 {
-    sensorPin = pin;
+    sensorPin = RPM_SENSOR_PIN;
     signalPending = false;
     signalCount = 0;
     lastSignalTime = 0;
@@ -36,13 +31,13 @@ void RPMCounter::begin(uint8_t pin)
         signalTimestampsWork[i] = 0;
 
     // Configure pin as input with pull-up resistor
-    pinMode(pin, INPUT_PULLUP);
+    pinMode(( uint8_t) sensorPin, INPUT_PULLUP);
 
     // Attach single interrupt to handle both edges
-    attachInterrupt(digitalPinToInterrupt(pin), handleSignal, FALLING);
+    attachInterrupt(digitalPinToInterrupt(sensorPin), handleSignal, FALLING);
 
     Serial.print("RPM Counter initialized on pin D");
-    Serial.print(pin);
+    Serial.print(sensorPin);
 }
 
 void IRAM_ATTR RPMCounter::handleSignal()
@@ -67,12 +62,12 @@ void RPMCounter::update()
     unsigned long latest = 0;
     unsigned long now = micros();
     memcpy(
-        (void *)&signalTimestampsRead[0],
+        (void *)&signalTimestampsCopy[0],
         (const void *)&signalTimestampsWork[0],
         BUFFER_SIZE * sizeof(unsigned long));
     for (unsigned int i = 0; i < BUFFER_SIZE; i++)
     {
-        unsigned long ts = signalTimestampsRead[i];
+        unsigned long ts = signalTimestampsCopy[i];
         if (ts == 0)
             continue; // Skip uninitialized entries
         if (earliest == 0 || ts < earliest)
@@ -86,7 +81,7 @@ void RPMCounter::update()
         unsigned int signalCountLocal = 0;
         for (unsigned int i = 0; i < BUFFER_SIZE; i++)
         {
-            if (signalTimestampsRead[i] != 0)
+            if (signalTimestampsCopy[i] != 0)
                 signalCountLocal++;
         }
         if (signalCountLocal < 2)

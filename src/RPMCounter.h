@@ -3,11 +3,12 @@
 
 #include <Arduino.h>
 
-#define BUFFER_SIZE 20
+#define BUFFER_SIZE 5 // Number of timestamps to store for RPM calculation, do not choose too large, as it will smear rapid changes
+#define RPM_SENSOR_PIN D7 //D6 = D0, D7=A0 on Opto Breakout Board
 
 class RPMCounter {
 public:
-    static void begin(uint8_t pin);
+    static void begin();
     static void update(); // Call this regularly in loop() to process pending signals
     
     // ISR function - must be public and static for interrupt attachment
@@ -22,7 +23,7 @@ public:
     
 private:
     static volatile unsigned long signalTimestampsWork[BUFFER_SIZE];
-    static volatile unsigned long signalTimestampsRead[BUFFER_SIZE];
+    static volatile unsigned long signalTimestampsCopy[BUFFER_SIZE];
     static unsigned int timestampIndex;
 
     static volatile bool signalPending;
@@ -35,34 +36,16 @@ private:
     static volatile unsigned long lastIntervalMicros; // Time between last two signals in microseconds
     static uint8_t sensorPin;
     
-    // Signal length filtering variables
-    static volatile unsigned long risingEdgeTime;
-    static volatile unsigned long fallingEdgeTime;
-    static volatile bool risingEdgeDetected;
-    
-    // Signal consistency checking to detect multiple apertures
-    static volatile unsigned long lastValidSignalLength;
-    static volatile unsigned long consistentSignalCount;
-    
-    // Signal length limits for noise filtering
-    // Optical disc: 2mm aperture on 30mm diameter disc = 2.1% duty cycle
-    // At 30000 RPM: 42μs HIGH, at 1000 RPM: 1.26ms HIGH
-    // Tightened range based on actual measurements to filter multiple apertures
-    static const unsigned long MIN_SIGNAL_LENGTH_US = 600;  // 600μs minimum (more selective)
-    static const unsigned long MAX_SIGNAL_LENGTH_US = 1400; // 1.4ms maximum (more selective)
-    
     // Simple two-timestamp approach - capture in ISR, process in main thread
     static volatile unsigned long currentTimestamp;
     static volatile unsigned long previousTimestamp;
     static volatile bool timestampReady;
     
     // Minimum time between valid signals (debouncing)
-    // Should be much shorter than our shortest valid signal (30μs)
-    // Set to 10μs to handle electrical bounce without blocking valid signals
-    static const unsigned long DEBOUNCE_TIME_US = 10; // 10μs in microseconds
+    static const unsigned long DEBOUNCE_TIME_US = 100; // 10μs in microseconds
     
     // Maximum reasonable RPM to filter out erroneous readings
-    static constexpr float MAX_REASONABLE_RPM = 35000.0; // Reject readings above 25k RPM
+    static constexpr float MAX_REASONABLE_RPM = 60000.0; // Reject readings above 25k RPM
     
 };
 
