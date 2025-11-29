@@ -34,9 +34,9 @@ private:
     // Analysis methods
     float calculateMovingAverage(u_short index, u_short window);
     float findMaxRPM();
-    u_short findTimeToTopRPM_MovingAverageMethod();
+    u_short avgTopRpmReachedIdx();
     float calculateActualSampleFrequency();
-    
+    void startTestRun();    
 public:
     MotorTest();
     

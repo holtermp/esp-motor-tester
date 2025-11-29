@@ -15,8 +15,16 @@ void MotorTest::start(u_short testType)
 {
     this->testType = testType;
     running = true;
-    sampleIndex = 0;
     testRunIndex = 0;
+    sampleIndex = 0;
+    testStartTime = millis(); // Record start time
+    testEndTime = 0;
+    MotorController::setSpeed(MotorController::SPEED_100);
+}
+
+void MotorTest::startTestRun()
+{
+    sampleIndex = 0;
     testStartTime = millis(); // Record start time
     testEndTime = 0;
     MotorController::setSpeed(MotorController::SPEED_100);
@@ -29,6 +37,10 @@ void MotorTest::update()
     {
         if (testRunIndex < NUM_TEST_RUNS)
         {
+            if (sampleIndex == 0)
+            {
+                startTestRun();
+            }
             if (sampleIndex < NUM_SAMPLES)
             {
                 temp_samples[testRunIndex][sampleIndex] = RPMCounter::getCurrentRPM();
@@ -48,10 +60,8 @@ void MotorTest::update()
                 sampleIndex = 0; // Reset for next run
             }
         }
-    }
-    else
-    {
-        running = false;
+        else
+            running = false;
     }
 }
 
@@ -75,11 +85,13 @@ String MotorTest::getResult()
             samples[i] = sum / NUM_TEST_RUNS;
         }
         // Calculate time-to-top-RPM using moving average method only
-        u_short timeToTop_MovingAvg = findTimeToTopRPM_MovingAverageMethod();
-        float maxRPM = findMaxRPM();
-
+        u_short topRpmIndex = avgTopRpmReachedIdx();
+        float maxRPM = samples[topRpmIndex];
+        
         // Calculate actual sample interval based on measured frequency
         float actualSampleIntervalMs = (actualSampleFrequency > 0) ? (1000.0 / actualSampleFrequency) : SLEEP_BETWEEN_SAMPLES_MS;
+        
+        float timeToMaxRpm = topRpmIndex*actualSampleIntervalMs;
 
         String json = "{";
         json += "\"samples\":[";
@@ -94,14 +106,14 @@ String MotorTest::getResult()
         json += "],";
         json += "\"timing\":{";
         json += "\"testDurationMs\":" + String(testEndTime - testStartTime) + ",";
-        json += "\"sampleCount\":" + String(sampleIndex) + ",";
+        json += "\"sampleCount\":" + String(NUM_SAMPLES) + ",";
         json += "\"actualSampleFrequencyHz\":" + String(actualSampleFrequency, 3) + ",";
         json += "\"actualSampleIntervalMs\":" + String(actualSampleIntervalMs, 2) + ",";
         json += "\"targetSampleIntervalMs\":" + String(SLEEP_BETWEEN_SAMPLES_MS);
         json += "},";
         json += "\"analysis\":{";
         json += "\"maxRPM\":" + String(maxRPM, 1) + ",";
-        json += "\"timeToTopRPM_ms\":" + String(timeToTop_MovingAvg * actualSampleIntervalMs, 1) + ",";
+        json += "\"timeToTopRPM_ms\":" + String(timeToMaxRpm) + ",";
         json += "\"parameters\":{";
         json += "\"movingAverageWindow\":" + String(MOVING_AVERAGE_WINDOW);
         json += "}";
@@ -130,7 +142,7 @@ float MotorTest::calculateMovingAverage(u_short index, u_short window)
 float MotorTest::findMaxRPM()
 {
     float maxRPM = 0;
-    for (u_short i = 0; i < sampleIndex; i++)
+    for (u_short i = 0; i < NUM_SAMPLES; i++)
     {
         if (samples[i] > maxRPM)
         {
@@ -141,12 +153,12 @@ float MotorTest::findMaxRPM()
 }
 
 // Moving Average Method - Find when moving average reaches close to max RPM
-u_short MotorTest::findTimeToTopRPM_MovingAverageMethod()
+u_short MotorTest::avgTopRpmReachedIdx()
 {
     float maxRPM = findMaxRPM();
     float targetRPM = maxRPM * 0.95; // Look for when we reach 95% of max RPM
 
-    for (u_short i = MOVING_AVERAGE_WINDOW - 1; i < sampleIndex; i++)
+    for (u_short i = MOVING_AVERAGE_WINDOW - 1; i < NUM_SAMPLES; i++)
     {
         float movingAvg = calculateMovingAverage(i, MOVING_AVERAGE_WINDOW);
         if (movingAvg >= targetRPM)
@@ -154,18 +166,19 @@ u_short MotorTest::findTimeToTopRPM_MovingAverageMethod()
             return i;
         }
     }
-    return sampleIndex - 1;
+    //fallback
+    return NUM_SAMPLES - 1;
 }
 
 // Calculate the actual sample frequency based on measured test duration
 float MotorTest::calculateActualSampleFrequency()
 {
-    if (testEndTime > testStartTime && sampleIndex > 1)
+    if (testEndTime > testStartTime )
     {
         float testDurationMs = testEndTime - testStartTime;
         float testDurationSec = testDurationMs / 1000.0;
         // Frequency = (samples - 1) / duration (since N samples means N-1 intervals)
-        return (sampleIndex - 1) / testDurationSec;
+        return (NUM_SAMPLES - 1) / testDurationSec;
     }
     return 0.0; // Invalid or no data
 }
