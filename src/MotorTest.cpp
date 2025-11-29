@@ -1,8 +1,9 @@
 #include "MotorTest.h"
 #include "RPMCounter.h"
-#include "MotorController.h"    
+#include "MotorController.h"
 
-MotorTest::MotorTest() {
+MotorTest::MotorTest()
+{
     running = false;
     sampleIndex = 0;
     testStartTime = 0;
@@ -10,50 +11,83 @@ MotorTest::MotorTest() {
     actualSampleFrequency = 0.0;
 }
 
-void MotorTest::start(u_short testType) {
+void MotorTest::start(u_short testType)
+{
     this->testType = testType;
     running = true;
     sampleIndex = 0;
-    testStartTime = millis();  // Record start time
+    testRunIndex = 0;
+    testStartTime = millis(); // Record start time
     testEndTime = 0;
     MotorController::setSpeed(MotorController::SPEED_100);
 }
 
-
-//run this in the main loop without blocking while isRunning() is true
-void MotorTest::update() {
-    if (testType == TEST_TYPE_ACCELERATION) {
-        if (sampleIndex < NUM_SAMPLES) {
-            samples[sampleIndex] = RPMCounter::getCurrentRPM();
-            sampleIndex++;
-            delay(SLEEP_BETWEEN_SAMPLES_MS);
-        } else {
-            testEndTime = millis();  // Record end time
-            actualSampleFrequency = calculateActualSampleFrequency();
-            MotorController::setSpeed(MotorController::SPEED_OFF);
-            running = false;
+// run this in the main loop without blocking while isRunning() is true
+void MotorTest::update()
+{
+    if (testType == TEST_TYPE_ACCELERATION)
+    {
+        if (testRunIndex < NUM_TEST_RUNS)
+        {
+            if (sampleIndex < NUM_SAMPLES)
+            {
+                temp_samples[testRunIndex][sampleIndex] = RPMCounter::getCurrentRPM();
+                sampleIndex++;
+                delay(SLEEP_BETWEEN_SAMPLES_MS);
+            }
+            else
+            {
+                testEndTime = millis(); // Record end time
+                actualSampleFrequency = calculateActualSampleFrequency();
+                MotorController::setSpeed(MotorController::SPEED_OFF);
+                testRunIndex++;
+                if (testRunIndex < NUM_TEST_RUNS)
+                {
+                    delay(SLEEP_BETWEEN_TEST_RUNS_MS);
+                }
+                sampleIndex = 0; // Reset for next run
+            }
         }
+    }
+    else
+    {
+        running = false;
     }
 }
 
-bool MotorTest::isRunning() {
-    return running;        
+bool MotorTest::isRunning()
+{
+    return running;
 }
 
-String MotorTest::getResult() {
-    if (!running && testType == TEST_TYPE_ACCELERATION) {
+String MotorTest::getResult()
+{
+    if (!running && testType == TEST_TYPE_ACCELERATION)
+    {
+        // Average samples across test runs
+        for (u_short i = 0; i < NUM_SAMPLES; i++)
+        {
+            float sum = 0.0;
+            for (u_short run = 0; run < NUM_TEST_RUNS; run++)
+            {
+                sum += temp_samples[run][i];
+            }
+            samples[i] = sum / NUM_TEST_RUNS;
+        }
         // Calculate time-to-top-RPM using moving average method only
         u_short timeToTop_MovingAvg = findTimeToTopRPM_MovingAverageMethod();
         float maxRPM = findMaxRPM();
-        
+
         // Calculate actual sample interval based on measured frequency
         float actualSampleIntervalMs = (actualSampleFrequency > 0) ? (1000.0 / actualSampleFrequency) : SLEEP_BETWEEN_SAMPLES_MS;
-        
+
         String json = "{";
         json += "\"samples\":[";
-        for (u_short i = 0; i < sampleIndex; i++) {
+        for (u_short i = 0; i < NUM_SAMPLES; i++)
+        {
             json += String(samples[i]);
-            if (i < sampleIndex - 1) {
+            if (i < NUM_SAMPLES - 1)
+            {
                 json += ",";
             }
         }
@@ -79,21 +113,27 @@ String MotorTest::getResult() {
 }
 
 // Calculate moving average for noise reduction
-float MotorTest::calculateMovingAverage(u_short index, u_short window) {
-    if (index < window - 1) return samples[index]; // Not enough data for moving average
-    
+float MotorTest::calculateMovingAverage(u_short index, u_short window)
+{
+    if (index < window - 1)
+        return samples[index]; // Not enough data for moving average
+
     float sum = 0;
-    for (u_short i = index - window + 1; i <= index; i++) {
+    for (u_short i = index - window + 1; i <= index; i++)
+    {
         sum += samples[i];
     }
     return sum / window;
 }
 
 // Find the maximum RPM value in the dataset
-float MotorTest::findMaxRPM() {
+float MotorTest::findMaxRPM()
+{
     float maxRPM = 0;
-    for (u_short i = 0; i < sampleIndex; i++) {
-        if (samples[i] > maxRPM) {
+    for (u_short i = 0; i < sampleIndex; i++)
+    {
+        if (samples[i] > maxRPM)
+        {
             maxRPM = samples[i];
         }
     }
@@ -101,13 +141,16 @@ float MotorTest::findMaxRPM() {
 }
 
 // Moving Average Method - Find when moving average reaches close to max RPM
-u_short MotorTest::findTimeToTopRPM_MovingAverageMethod() {
+u_short MotorTest::findTimeToTopRPM_MovingAverageMethod()
+{
     float maxRPM = findMaxRPM();
     float targetRPM = maxRPM * 0.95; // Look for when we reach 95% of max RPM
-    
-    for (u_short i = MOVING_AVERAGE_WINDOW - 1; i < sampleIndex; i++) {
+
+    for (u_short i = MOVING_AVERAGE_WINDOW - 1; i < sampleIndex; i++)
+    {
         float movingAvg = calculateMovingAverage(i, MOVING_AVERAGE_WINDOW);
-        if (movingAvg >= targetRPM) {
+        if (movingAvg >= targetRPM)
+        {
             return i;
         }
     }
@@ -115,8 +158,10 @@ u_short MotorTest::findTimeToTopRPM_MovingAverageMethod() {
 }
 
 // Calculate the actual sample frequency based on measured test duration
-float MotorTest::calculateActualSampleFrequency() {
-    if (testEndTime > testStartTime && sampleIndex > 1) {
+float MotorTest::calculateActualSampleFrequency()
+{
+    if (testEndTime > testStartTime && sampleIndex > 1)
+    {
         float testDurationMs = testEndTime - testStartTime;
         float testDurationSec = testDurationMs / 1000.0;
         // Frequency = (samples - 1) / duration (since N samples means N-1 intervals)
