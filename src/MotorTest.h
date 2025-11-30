@@ -8,7 +8,7 @@
 
 #define NUM_SAMPLES 100
 #define SLEEP_BETWEEN_SAMPLES_MS 10
-#define NUM_TEST_RUNS 5
+#define NUM_TEST_RUNS 1
 #define SLEEP_BETWEEN_TEST_RUNS_MS 2000
 
 // Analysis parameters for time-to-top-RPM calculation
@@ -22,6 +22,7 @@ private:
     u_short testType;
     float temp_samples[NUM_TEST_RUNS][NUM_SAMPLES];
     float samples[NUM_SAMPLES];
+    float filteredSamples[NUM_SAMPLES];  // Outlier-filtered samples
     u_short sampleIndex = 0;
     u_short testRunIndex = 0;
     
@@ -36,7 +37,13 @@ private:
     float findMaxRPM();
     u_short avgTopRpmReachedIdx();
     float calculateActualSampleFrequency();
-    void startTestRun();    
+    void startTestRun();
+    
+    // Outlier filtering methods
+    void filterOutliers(float* inputSamples, float* outputSamples, u_short size);
+    void removeOutliers(float* data, u_short size);
+    float calculateMedian(float* values, u_short size);
+    float calculateMAD(float* values, u_short size, float median);    
 public:
     MotorTest();
     

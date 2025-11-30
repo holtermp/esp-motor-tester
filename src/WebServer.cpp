@@ -146,7 +146,7 @@ resultText += '<br><small>Actual frequency: '+d.timing.actualSampleFrequencyHz+'
 }
 document.getElementById('testResult').innerHTML=resultText;
 console.log('Motor Test Results:',d);
-displayChart(d.samples, d.analysis, d.timing);
+displayChart(d.samples, d.filteredSamples, d.analysis, d.timing);
 }else{
 document.getElementById('testResult').innerHTML='<span style="color:orange">'+d.message+'</span>';
 }
@@ -155,7 +155,7 @@ document.getElementById('testResult').innerHTML='<span style="color:red">Error g
 console.log(e);
 });
 }
-function displayChart(samples, analysis, timing){
+function displayChart(samples, filteredSamples, analysis, timing){
 const ctx=document.getElementById('rpmChart').getContext('2d');
 document.getElementById('chartContainer').style.display='block';
 
@@ -166,13 +166,23 @@ const labels=samples.map((v,i)=>(i*sampleIntervalMs).toFixed(1)+'ms');
 
 // Prepare datasets
 let datasets=[{
-label:'RPM',
+label:'Original RPM',
 data:samples,
+borderColor:'#6c757d',
+backgroundColor:'rgba(108,117,125,0.1)',
+borderWidth:1,
+fill:false,
+tension:0.1,
+pointRadius:1
+},{
+label:'Filtered RPM (outliers removed)',
+data:filteredSamples || samples,
 borderColor:'#007bff',
 backgroundColor:'rgba(0,123,255,0.1)',
 borderWidth:2,
-fill:true,
-tension:0.1
+fill:false,
+tension:0.1,
+pointRadius:1
 }];
 
 // Add time-to-top-RPM marker if available - using point marker approach
@@ -181,9 +191,9 @@ const timeIndex = Math.floor(analysis.timeToTopRPM_ms / sampleIntervalMs);
 if(timeIndex >= 0 && timeIndex < samples.length) {
 // Create a point dataset to mark the time-to-top-RPM
 const markerData = new Array(samples.length).fill(null);
-markerData[timeIndex] = samples[timeIndex];
+markerData[timeIndex] = filteredSamples ? filteredSamples[timeIndex] : samples[timeIndex];
 datasets.push({
-label:'Time to Top RPM: '+analysis.timeToTopRPM_ms.toFixed(0)+'ms ('+samples[timeIndex].toFixed(0)+' RPM)',
+label:'Time to Top RPM: '+analysis.timeToTopRPM_ms.toFixed(0)+'ms ('+markerData[timeIndex].toFixed(0)+' RPM)',
 data: markerData,
 borderColor:'#28a745',
 backgroundColor:'#28a745',

@@ -4,7 +4,7 @@
 #include <Arduino.h>
 
 #define BUFFER_SIZE 5 // Number of timestamps to store for RPM calculation, do not choose too large, as it will smear rapid changes
-#define RPM_SENSOR_PIN D7 //D6 = D0, D7=A0 on Opto Breakout Board
+#define RPM_SENSOR_PIN D6 //D6 = D0, D7=A0 on Opto Breakout Board
 
 class RPMCounter {
 public:
