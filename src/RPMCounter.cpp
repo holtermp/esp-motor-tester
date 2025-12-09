@@ -20,6 +20,18 @@ volatile unsigned long RPMCounter::signalTimestampsCopy[BUFFER_SIZE] = {0};
 void RPMCounter::begin()
 {
     sensorPin = RPM_SENSOR_PIN;
+    RPMCounter::clear();
+    // Configure pin as input with pull-up resistor
+    pinMode(( uint8_t) sensorPin, INPUT_PULLUP);
+
+    // Attach single interrupt to handle both edges
+    attachInterrupt(digitalPinToInterrupt(sensorPin), handleSignal, FALLING);
+
+    Serial.print("RPM Counter initialized on pin D");
+    Serial.print(sensorPin);
+}
+
+void RPMCounter::clear() {
     signalPending = false;
     signalCount = 0;
     lastSignalTime = 0;
@@ -29,15 +41,6 @@ void RPMCounter::begin()
     timestampIndex = 0;
     for (unsigned int i = 0; i < BUFFER_SIZE; i++)
         signalTimestampsWork[i] = 0;
-
-    // Configure pin as input with pull-up resistor
-    pinMode(( uint8_t) sensorPin, INPUT_PULLUP);
-
-    // Attach single interrupt to handle both edges
-    attachInterrupt(digitalPinToInterrupt(sensorPin), handleSignal, FALLING);
-
-    Serial.print("RPM Counter initialized on pin D");
-    Serial.print(sensorPin);
 }
 
 void IRAM_ATTR RPMCounter::handleSignal()

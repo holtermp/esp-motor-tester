@@ -9,6 +9,7 @@
 class RPMCounter {
 public:
     static void begin();
+    static void clear();
     static void update(); // Call this regularly in loop() to process pending signals
     
     // ISR function - must be public and static for interrupt attachment

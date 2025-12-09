@@ -24,6 +24,7 @@ void MotorTest::start(u_short testType)
 
 void MotorTest::startTestRun()
 {
+    RPMCounter::clear();
     sampleIndex = 0;
     testStartTime = millis(); // Record start time
     testEndTime = 0;
