@@ -75,6 +75,7 @@ String MotorTest::getResult()
 {
     if (!running && testType == TEST_TYPE_ACCELERATION)
     {
+        //FIXME: do not average samples across runs, but keep the one least likely to be an outlier
         // Average samples across test runs
         for (u_short i = 0; i < NUM_SAMPLES; i++)
         {
